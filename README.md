@@ -5,9 +5,9 @@ SafeShift is a system meant to be retrofitted on new and/or old industrial vehic
 The main SafeShift board is to be placed in space inside the drivers cabin. and the sensors respective connectors will be plugged into them. The sensors are to be bolted/fasted to their repective areas (defined below). _NOTE: not ALL sensors must be connected to use SafeShift_
 
 ## Connectivity and Dashboard
-The Preventative Maintenance Part of the systam connects to a dashboard through wifi or bluetooth, and provides sensor reading, both past and present. A simple learning model from previous data shows the current status of the system based on the data gathered. _IBRAHIM YOU DO THIS_ <img width="1784" height="930" alt="image" src="https://github.com/user-attachments/assets/e17b7cbf-8435-4a08-8fa3-0644ea47b524" />
+The Preventative Maintenance Part of the systam connects to a dashboard through wifi or bluetooth, and provides sensor reading, both past and present. A simple learning model from previous data shows the current status of the system based on the data gathered. <img width="1784" height="930" alt="image" src="https://github.com/user-attachments/assets/e17b7cbf-8435-4a08-8fa3-0644ea47b524" />
 
 ## Safety 
-SafeShift focuses on the following safety features: Seatbelt, Door closure, pedestrian detection, proximity sensing and bla bla bla
+SafeShift uses a combination of sensors to ensure real-time safety monitoring and intelligent decision-making in industrial vehicles. It integrates JSN-SR04T (ultrasonic sensor) for proximity and obstacle detection, RCWL-0516 (microwave radar sensor) for motion detection, ADXL345 (MEMS accelerometer) for vibration and tilt monitoring, DS18B20 (digital temperature sensor) for thermal monitoring, WCS1500 (Hall-effect current sensor) for system current measurement, and A3144 (Hall-effect sensor) for position and magnetic detection. These sensors enable features such as blind spot detection, pedestrian awareness, and environment-adaptive responses in dynamic industrial settings. Together, this multi-sensor approach provides reliable, low-cost, and scalable safety coverage, significantly improving operational safety and system awareness.
 
 ## Preventative Maintenance
