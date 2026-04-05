@@ -19,3 +19,19 @@ SafeShift tracks the following parameters in Industrial Vehicles: Vibration in m
 ## Energy Tracking 
 If the vehicle is equipped with an electrical system, consumption is monitored via real-time current data shown on the dashboard through the current sensor.
 Note: The voltage is to be set by the user following the vehicles specifications.
+
+## Usage
+Today at 8:20 AM
+8:20 AM
+Asma
+SafeShift is designed for simple and intuitive usage, requiring the operator to download and launch the mobile application and connect to the system via WiFi or Bluetooth.
+
+run app
+
+Once connected, the dashboard provides real-time monitoring of vehicle status and safety conditions.
+
+If proximity is detected, a buzzer alarm is activated. 
+If a pedestrian is detected, a buzzer alarm is also triggered. 
+If the seatbelt is not fastened, an LED indicator is activated. 
+If the door is not properly closed, an LED indicator is turned on. 
+If the load is too heavy, a pressure LED is activated.
