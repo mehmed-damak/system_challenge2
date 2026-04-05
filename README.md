@@ -6,3 +6,8 @@ The main SafeShift board is to be placed in space inside the drivers cabin. and 
 
 ## Connectivity and Dashboard
 The Preventative Maintenance Part of the systam connects to a dashboard through wifi or bluetooth, and provides sensor reading, both past and present. A simple learning model from previous data shows the current status of the system based on the data gathered. _IBRAHIM YOU DO THIS_ <img width="1784" height="930" alt="image" src="https://github.com/user-attachments/assets/e17b7cbf-8435-4a08-8fa3-0644ea47b524" />
+
+## Safety 
+SafeShift focuses on the following safety features: Seatbelt, Door closure, pedestrian detection, proximity sensing and bla bla bla
+
+## Preventative Maintenance
