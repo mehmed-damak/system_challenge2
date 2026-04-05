@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SafeShift — Vehicle Safety Monitor</title>
+
+  <!-- Chart.js from CDN (used only for the temperature sparkline) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+  <style>
+    /* ══════════════════════════════════════════════════════
+       CSS VARIABLES & RESET
+    ══════════════════════════════════════════════════════ */
+    :root {
+      --bg:         #0f1117;
+      --surface:    #1a1d27;
+      --surface-2:  #22263a;
+      --border:     #2e3250;
+      --text:       #e8eaf6;
+      --text-2:     #8b92b8;
+      --green:      #00e676;
+      --amber:      #ffab00;
+      --red:        #ff4444;
+      --blue:       #448aff;
+      --purple:     #7c4dff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      min-width: 1024px;
+      overflow: hidden;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       APP SHELL — header + 3-col main + footer
+    ══════════════════════════════════════════════════════ */
+    .app {
+      display: grid;
+      grid-template-rows: 56px 1fr 40px;
+      height: 100vh;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       HEADER
+    ══════════════════════════════════════════════════════ */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .header-logo { display: flex; flex-direction: column; min-width: 200px; }
+    .header-logo .brand    { font-size: 18px; font-weight: 700; color: var(--green); letter-spacing: 1.5px; }
+    .header-logo .subtitle { font-size: 10px; color: var(--text-2); letter-spacing: 0.5px; }
+
+    .header-center { flex: 1; text-align: center; }
+    #vehicle-name {
+      font-size: 15px; font-weight: 600; color: var(--text);
+      cursor: pointer;
+      border-bottom: 1px dashed transparent;
+      transition: border-color 0.2s;
+      padding: 2px 4px;
+      border-radius: 2px;
+    }
+    #vehicle-name:hover  { border-bottom-color: var(--text-2); }
+    #vehicle-name:focus  { outline: none; border-bottom-color: var(--blue); background: var(--surface-2); }
+
+    .header-right {
+      display: flex; align-items: center; gap: 20px;
+      min-width: 280px; justify-content: flex-end;
+    }
+
+    .hstat { display: flex; flex-direction: column; align-items: flex-end; }
+    .hstat .hl { font-size: 9px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .hstat .hv { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    .ws-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--red); transition: background 0.3s; flex-shrink: 0;
+    }
+    .ws-dot.connected { background: var(--green); }
+    .ws-row { display: flex; align-items: center; gap: 8px; }
+    .ws-lbl { font-size: 11px; color: var(--text-2); }
+
+    /* ══════════════════════════════════════════════════════
+       MAIN 3-COLUMN GRID
+    ══════════════════════════════════════════════════════ */
+    main {
+      display: grid;
+      grid-template-columns: 30% 35% 35%;
+      overflow: hidden;
+    }
+
+    .col {
+      border-right: 1px solid var(--border);
+      padding: 10px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .col:last-child { border-right: none; }
+    .col::-webkit-scrollbar { width: 3px; }
+    .col::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ══════════════════════════════════════════════════════
+       SHARED PANEL / CARD
+    ══════════════════════════════════════════════════════ */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .panel-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-2);
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       STATUS CHIPS
+    ══════════════════════════════════════════════════════ */
+    .chip {
+      display: inline-block;
+      font-size: 9px; font-weight: 700;
+      padding: 2px 6px; border-radius: 3px;
+      letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .chip.ok   { background: rgba(0,230,118,0.12); color: var(--green); border: 1px solid rgba(0,230,118,0.3); }
+    .chip.warn { background: rgba(255,171,0,0.12); color: var(--amber); border: 1px solid rgba(255,171,0,0.3); }
+    .chip.crit { background: rgba(255,68,68,0.12);  color: var(--red);   border: 1px solid rgba(255,68,68,0.3); }
+    .chip.info { background: rgba(68,138,255,0.12); color: var(--blue);  border: 1px solid rgba(68,138,255,0.3); }
+
+    /* ══════════════════════════════════════════════════════
+       RELAY STATUS BADGE
+    ══════════════════════════════════════════════════════ */
+    .relay-badge {
+      border-radius: 8px;
+      padding: 10px 16px;
+      min-height: 52px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: background 0.3s, border-color 0.3s;
+    }
+    .relay-badge.operable {
+      background: rgba(0,230,118,0.10);
+      border: 1px solid rgba(0,230,118,0.5);
+    }
+    .relay-badge.interlocked {
+      background: rgba(255,68,68,0.10);
+      border: 1px solid rgba(255,68,68,0.5);
+      animation: pulse-badge 1s ease-in-out infinite;
+    }
+    .relay-text { font-size: 15px; font-weight: 700; letter-spacing: 1px; }
+    .relay-badge.operable    .relay-text { color: var(--green); }
+    .relay-badge.interlocked .relay-text { color: var(--red); }
+    .relay-reasons { font-size: 10px; color: var(--red); margin-top: 4px; text-align: center; line-height: 1.4; }
+
+    @keyframes pulse-badge {
+      0%,100% { box-shadow: 0 0 0 0   rgba(255,68,68,0.4); }
+      50%      { box-shadow: 0 0 0 7px rgba(255,68,68,0); }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       SAFETY STATUS TILES  (2×2 grid)
+    ══════════════════════════════════════════════════════ */
+    .tiles-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+    .tile {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 9px 10px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .tile-icon  { font-size: 16px; line-height: 1; }
+    .tile-label { font-size: 9px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .tile-value { font-size: 13px; font-weight: 700; }
+    .tile-sub   { font-size: 9px; color: var(--text-2); }
+
+    /* ══════════════════════════════════════════════════════
+       TOP-DOWN EXCAVATOR SVG CONTAINER
+    ══════════════════════════════════════════════════════ */
+    .excavator-wrap {
+      display: flex; justify-content: center; align-items: center;
+      padding: 4px;
+    }
+
+    /* Sensor dot pulse on CRITICAL */
+    @keyframes sensor-pulse {
+      0%,100% { r: 5; opacity: 1; }
+      50%      { r: 8; opacity: 0.55; }
+    }
+    .sensor-dot.critical {
+      animation: sensor-pulse-anim 0.75s ease-in-out infinite;
+    }
+    @keyframes sensor-pulse-anim {
+      0%,100% { transform-origin: center; transform: scale(1);   opacity: 1; }
+      50%      {                           transform: scale(1.7); opacity: 0.5; }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       BIG NUMBER TILES  (maintenance column, 2×2)
+    ══════════════════════════════════════════════════════ */
+    .big-2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+    .big-tile {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 10px;
+      text-align: center;
+    }
+    .bt-label { font-size: 9px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+    .bt-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .bt-chip  { margin-top: 6px; }
+
+    /* ══════════════════════════════════════════════════════
+       TEMPERATURE SPARKLINE
+    ══════════════════════════════════════════════════════ */
+    .sparkline-canvas-wrap { position: relative; height: 92px; }
+
+    /* ══════════════════════════════════════════════════════
+       OPERATOR CONTROLS
+    ══════════════════════════════════════════════════════ */
+
+    /* Range sliders */
+    .slider-block { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+    .slider-header {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: var(--text-2);
+    }
+    .slider-header .sv { color: var(--text); font-weight: 600; }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%; height: 4px; border-radius: 2px;
+      background: var(--border); outline: none; cursor: pointer;
+    }
+    input[type=range].overload { background: linear-gradient(to right, var(--red) var(--fill, 70%), var(--border) var(--fill, 70%)); }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--blue); cursor: pointer;
+      border: 2px solid var(--bg);
+    }
+    input[type=range].overload::-webkit-slider-thumb { background: var(--red); }
+
+    /* Toggle rows */
+    .ctrl-row {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .ctrl-label { font-size: 12px; color: var(--text-2); }
+
+    /* Toggle switch */
+    .tog { position: relative; width: 38px; height: 21px; flex-shrink: 0; }
+    .tog input { opacity: 0; width: 0; height: 0; }
+    .tog-track {
+      position: absolute; inset: 0;
+      background: var(--border); border-radius: 11px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .tog-track::before {
+      content: '';
+      position: absolute;
+      height: 15px; width: 15px;
+      left: 3px; top: 3px;
+      background: var(--text-2); border-radius: 50%;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .tog input:checked + .tog-track              { background: rgba(255,68,68,0.25); }
+    .tog input:checked + .tog-track::before      { transform: translateX(17px); background: var(--red); }
+    .tog.green input:checked + .tog-track        { background: rgba(0,230,118,0.20); }
+    .tog.green input:checked + .tog-track::before{ background: var(--green); }
+
+    /* Blind spot collapsible */
+    .collapsible-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; padding: 7px 0;
+      font-size: 10px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px;
+      border-top: 1px solid var(--border); margin-top: 2px;
+      user-select: none;
+    }
+    .caret { display: inline-block; transition: transform 0.2s; }
+    .caret.open { transform: rotate(90deg); }
+    .collapsible-body { display: none; margin-top: 6px; }
+    .collapsible-body.open { display: block; }
+
+    .bs-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+    .bs-lbl { font-size: 10px; color: var(--text-2); width: 80px; flex-shrink: 0; }
+    .bs-num { font-size: 10px; width: 32px; text-align: right; flex-shrink: 0; }
+
+    /* Connection buttons (Bluetooth / Internet) */
+    .conn-btn {
+      width: 100%; padding: 10px;
+      border: 2px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-2); font-size: 13px; font-weight: 600;
+      border-radius: 6px; cursor: pointer; letter-spacing: 0.5px;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+      margin-top: 8px; display: flex; align-items: center;
+      justify-content: center; gap: 8px;
+    }
+    .conn-btn:hover { background: var(--surface); }
+    .bt-btn.connected  { border-color: var(--blue);  color: var(--blue);  background: rgba(68,138,255,0.08); }
+    .inet-btn.connected{ border-color: var(--green); color: var(--green); background: rgba(0,230,255,0.08); }
+
+    /* Fault button */
+    .fault-btn {
+      width: 100%; padding: 10px;
+      border: 2px solid var(--amber);
+      background: rgba(255,171,0,0.08);
+      color: var(--amber); font-size: 13px; font-weight: 600;
+      border-radius: 6px; cursor: pointer; letter-spacing: 0.5px;
+      transition: background 0.2s;
+      margin-top: 8px;
+    }
+    .fault-btn:hover  { background: rgba(255,171,0,0.18); }
+    .fault-btn.active {
+      border-color: var(--red); color: var(--red);
+      background: rgba(255,68,68,0.08);
+      animation: pulse-fault 1s ease-in-out infinite;
+    }
+    @keyframes pulse-fault {
+      0%,100% { box-shadow: 0 0 0 0   rgba(255,68,68,0.4); }
+      50%      { box-shadow: 0 0 0 6px rgba(255,68,68,0); }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       LIVE ALERT LOG
+    ══════════════════════════════════════════════════════ */
+    .alert-log {
+      max-height: 222px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .alert-log::-webkit-scrollbar { width: 3px; }
+    .alert-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .alert-entry {
+      display: grid;
+      grid-template-columns: 58px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-left: 3px solid var(--border);
+      background: var(--surface-2);
+      border-radius: 0 4px 4px 0;
+      font-size: 11px;
+      animation: slide-in 0.22s ease-out;
+    }
+    .alert-entry.CRITICAL { border-left-color: var(--red); }
+    .alert-entry.WARNING  { border-left-color: var(--amber); }
+    .alert-entry.INFO     { border-left-color: var(--green); }
+
+    .alert-ts  { font-variant-numeric: tabular-nums; font-size: 10px; }
+    .alert-entry.CRITICAL .alert-ts { color: var(--red); }
+    .alert-entry.WARNING  .alert-ts { color: var(--amber); }
+    .alert-entry.INFO     .alert-ts { color: var(--green); }
+    .alert-msg    { font-weight: 600; }
+    .alert-detail { font-size: 10px; color: var(--text-2); text-align: right; }
+
+    .alert-empty {
+      color: var(--text-2); font-style: italic;
+      text-align: center; padding: 16px; font-size: 11px;
+    }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════════════════════ */
+    footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 20px; gap: 0;
+      flex-shrink: 0;
+    }
+    .fstat {
+      display: flex; align-items: center; gap: 8px;
+      padding: 0 18px; border-right: 1px solid var(--border);
+      height: 100%;
+    }
+    .fstat:first-child { padding-left: 0; }
+    .fstat:last-child  { border-right: none; }
+    .fl { font-size: 9px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
+    .fv { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* ══════════════════════════════════════════════════════
+       DISCONNECTED OVERLAY
+    ══════════════════════════════════════════════════════ */
+    #overlay {
+      position: fixed; inset: 0;
+      background: rgba(15,17,23,0.9);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 999; gap: 14px;
+    }
+    #overlay.hidden { display: none; }
+    #overlay h2  { color: var(--text); font-size: 20px; }
+    #overlay p   { color: var(--text-2); font-size: 12px; }
+    #overlay kbd {
+      background: var(--surface-2); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 4px; font-family: monospace;
+      font-size: 12px; color: var(--green);
+    }
+    .spinner {
+      width: 34px; height: 34px;
+      border: 3px solid var(--border); border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     DISCONNECTED / CONNECTING OVERLAY
+══════════════════════════════════════════════════════ -->
+<div id="overlay">
+  <div class="spinner"></div>
+  <h2>Connecting to SafeShift Server</h2>
+  <p>Waiting for <strong style="color:var(--blue)">ws://localhost:8765</strong> …</p>
+  <p>Start the server with <kbd>python server.py</kbd></p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     APP SHELL
+══════════════════════════════════════════════════════ -->
+<div class="app">
+
+  <!-- ══════════════════════════════════
+       HEADER
+  ══════════════════════════════════ -->
+  <header>
+    <div class="header-logo">
+      <span class="brand">SafeShift</span>
+      <span class="subtitle">Universal Vehicle Safety Monitor</span>
+    </div>
+
+    <div class="header-center">
+      <span id="vehicle-name" contenteditable="true" spellcheck="false">Excavator #01</span>
+    </div>
+
+    <div class="header-right">
+      <div class="hstat">
+        <span class="hl">Local Time</span>
+        <span class="hv" id="live-clock">--:--:--</span>
+      </div>
+      <div class="hstat">
+        <span class="hl">Server Uptime</span>
+        <span class="hv" id="uptime-display">0s</span>
+      </div>
+      <div class="ws-row">
+        <div id="ws-dot" class="ws-dot"></div>
+        <span id="ws-lbl" class="ws-lbl">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════
+       MAIN 3-COLUMN AREA
+  ══════════════════════════════════ -->
+  <main>
+
+    <!-- ────────────────────────────────────────────────
+         COLUMN 1 — SAFETY
+    ──────────────────────────────────────────────── -->
+    <div class="col" id="col-safety">
+
+      <!-- Relay Status Badge -->
+      <div id="relay-badge" class="relay-badge operable">
+        <span class="relay-text" id="relay-text">● VEHICLE OPERABLE</span>
+        <span class="relay-reasons" id="relay-reasons"></span>
+      </div>
+
+      <!-- AI Failure Prediction Panel -->
+      <div class="panel" id="pred-panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>AI Failure Prediction</span>
+          <span class="chip info" id="pred-model-chip">XGBoost</span>
+        </div>
+        <!-- Probability gauge bar -->
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-2);margin-bottom:4px;">
+            <span>Failure Probability</span>
+            <span id="pred-pct-label" style="font-weight:700;color:var(--green)">0.0%</span>
+          </div>
+          <div style="background:var(--surface-2);border-radius:4px;height:10px;overflow:hidden;border:1px solid var(--border);">
+            <div id="pred-bar" style="height:100%;width:0%;background:var(--green);border-radius:4px;transition:width 0.4s ease,background 0.4s ease;"></div>
+          </div>
+        </div>
+        <!-- Result badge -->
+        <div id="pred-badge" style="
+          text-align:center;padding:8px;border-radius:6px;
+          background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.3);
+          font-size:12px;font-weight:700;letter-spacing:0.5px;color:var(--green);
+          transition:all 0.3s;">
+          ✓ NO FAILURE PREDICTED
+        </div>
+        <div style="margin-top:6px;font-size:9px;color:var(--text-2);text-align:center;line-height:1.4;">
+          Live inputs: RPM · Air Temp · Tool Wear (service hours)
+        </div>
+      </div>
+
+      <!-- 4 Safety Status Tiles -->
+      <div class="panel">
+        <div class="panel-title">Safety Status</div>
+        <div class="tiles-2x2">
+
+          <!-- Hydraulic Pressure -->
+          <div class="tile">
+            <span class="tile-icon">⚖️</span>
+            <span class="tile-label">Hydraulic</span>
+            <span class="tile-value" id="tv-pressure">--- bar</span>
+            <span class="tile-sub">/ 280 bar max</span>
+            <span class="chip ok" id="chip-pressure">OK</span>
+          </div>
+
+          <!-- Door -->
+          <div class="tile">
+            <span class="tile-icon">🚪</span>
+            <span class="tile-label">Cab Door</span>
+            <span class="tile-value" id="tv-door" style="color:var(--green)">Closed</span>
+            <span class="tile-sub">&nbsp;</span>
+            <span class="chip ok" id="chip-door">CLOSED</span>
+          </div>
+
+          <!-- Seatbelt -->
+          <div class="tile">
+            <span class="tile-icon">🔒</span>
+            <span class="tile-label">Seatbelt</span>
+            <span class="tile-value" id="tv-belt" style="color:var(--green)">Buckled</span>
+            <span class="tile-sub">&nbsp;</span>
+            <span class="chip ok" id="chip-belt">BUCKLED</span>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /col-safety -->
+
+
+    <!-- ────────────────────────────────────────────────
+         COLUMN 2 — MAINTENANCE
+    ──────────────────────────────────────────────── -->
+    <div class="col" id="col-maintenance">
+
+      <!-- ── Machine 1 (live) ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 1</span>
+          <span class="chip ok">LIVE</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile">
+            <div class="bt-label">Motor RPM</div>
+            <div class="bt-value" id="bt-rpm">----</div>
+            <div class="bt-chip"><span class="chip ok" id="chip-rpm">OK</span></div>
+          </div>
+          <div class="big-tile">
+            <div class="bt-label">Temperature</div>
+            <div class="bt-value" id="bt-temp">--°C</div>
+            <div class="bt-chip"><span class="chip ok" id="chip-temp">OK</span></div>
+          </div>
+          <div class="big-tile">
+            <div class="bt-label">Vibration</div>
+            <div class="bt-value" id="bt-vib">-.--g</div>
+            <div class="bt-chip"><span class="chip ok" id="chip-vib">OK</span></div>
+          </div>
+          <div class="big-tile">
+            <div class="bt-label">Hydraulic</div>
+            <div class="bt-value" id="bt-hyd">--- bar</div>
+            <div class="bt-chip"><span class="chip ok" id="chip-hyd">OK</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Temperature Sparkline -->
+      <div class="panel">
+        <div class="panel-title">Machine 1 — Temp (°C) Last 30 s</div>
+        <div class="sparkline-canvas-wrap">
+          <canvas id="temp-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- ── Machine 2 ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 2</span>
+          <span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile"><div class="bt-label">Motor RPM</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Temperature</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Vibration</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Hydraulic</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+        </div>
+      </div>
+
+      <!-- ── Machine 3 ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 3</span>
+          <span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile"><div class="bt-label">Motor RPM</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Temperature</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Vibration</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Hydraulic</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+        </div>
+      </div>
+
+      <!-- ── Machine 4 ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 4</span>
+          <span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile"><div class="bt-label">Motor RPM</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Temperature</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Vibration</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Hydraulic</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+        </div>
+      </div>
+
+      <!-- ── Machine 5 ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 5</span>
+          <span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile"><div class="bt-label">Motor RPM</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Temperature</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Vibration</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Hydraulic</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+        </div>
+      </div>
+
+      <!-- ── Machine 6 ── -->
+      <div class="panel">
+        <div class="panel-title" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Machine 6</span>
+          <span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span>
+        </div>
+        <div class="big-2x2">
+          <div class="big-tile"><div class="bt-label">Motor RPM</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Temperature</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Vibration</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+          <div class="big-tile"><div class="bt-label">Hydraulic</div><div class="bt-value" style="color:var(--text-2)">--</div><div class="bt-chip"><span class="chip" style="background:rgba(139,146,184,0.1);color:var(--text-2);border:1px solid var(--border)">N/A</span></div></div>
+        </div>
+      </div>
+
+    </div><!-- /col-maintenance -->
+
+
+    <!-- ────────────────────────────────────────────────
+         COLUMN 3 — CONTROLS + ALERT LOG
+    ──────────────────────────────────────────────── -->
+    <div class="col" id="col-controls">
+
+      <!-- ── Operator Controls Panel ── -->
+      <div class="panel">
+        <div class="panel-title">Operator Controls</div>
+
+        <!-- Hydraulic Pressure Slider -->
+        <div class="slider-block">
+          <div class="slider-header">
+            <span>Hydraulic Pressure</span>
+            <span><span class="sv" id="sv-pressure">180</span> bar
+            &nbsp;(<span id="sv-pressure-pct">64</span>%)</span>
+          </div>
+          <input type="range" id="ctrl-pressure" min="0" max="400" value="180"
+                 oninput="onPressureChange(+this.value)">
+        </div>
+
+        <!-- RPM Slider -->
+        <div class="slider-block">
+          <div class="slider-header">
+            <span>Motor RPM</span>
+            <span class="sv" id="sv-rpm">1800</span>
+          </div>
+          <input type="range" id="ctrl-rpm" min="0" max="2500" value="1800"
+                 oninput="sendCtrl('set_rpm', +this.value);
+                          document.getElementById('sv-rpm').textContent = this.value">
+        </div>
+
+        <!-- Temperature Slider -->
+        <div class="slider-block">
+          <div class="slider-header">
+            <span>Air Temperature</span>
+            <span><span class="sv" id="sv-temp">75</span> °C</span>
+          </div>
+          <input type="range" id="ctrl-temp" min="20" max="130" value="75"
+                 oninput="sendCtrl('set_temp', +this.value);
+                          document.getElementById('sv-temp').textContent = this.value">
+        </div>
+
+        <!-- Service Hours Slider -->
+        <div class="slider-block">
+          <div class="slider-header">
+            <span>Service Hours</span>
+            <span><span class="sv" id="sv-svc">232</span> / 250 h</span>
+          </div>
+          <input type="range" id="ctrl-svc" min="0" max="500" value="232"
+                 oninput="sendCtrl('set_service_hours', +this.value);
+                          document.getElementById('sv-svc').textContent = this.value">
+        </div>
+
+        <!-- Toggle: Door open -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Door open</span>
+          <label class="tog">
+            <input type="checkbox" id="ctrl-door"
+                   onchange="sendCtrl('toggle_door', this.checked)">
+            <span class="tog-track"></span>
+          </label>
+        </div>
+
+        <!-- Toggle: Seatbelt removed -->
+        <div class="ctrl-row">
+          <span class="ctrl-label">Seatbelt removed</span>
+          <label class="tog">
+            <input type="checkbox" id="ctrl-belt"
+                   onchange="sendCtrl('toggle_belt', this.checked)">
+            <span class="tog-track"></span>
+          </label>
+        </div>
+
+        <!-- Fault injection button -->
+        <button id="fault-btn" class="fault-btn" onclick="toggleFault()">
+          ⚡ Inject Vibration Fault
+        </button>
+
+        <!-- Bluetooth connect button -->
+        <button id="bt-btn" class="conn-btn bt-btn" onclick="toggleBluetooth()">
+          <span id="bt-icon">&#x1F4F6;</span> Connect Bluetooth
+        </button>
+
+        <!-- Internet / cloud button -->
+        <button id="inet-btn" class="conn-btn inet-btn" onclick="toggleInternet()">
+          <span id="inet-icon">&#x1F310;</span> Internet
+        </button>
+
+      </div><!-- /controls panel -->
+
+      <!-- ── Live Alert Log Panel ── -->
+      <div class="panel" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+        <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
+          <span>Live Alert Log</span>
+          <span id="alert-count" style="color:var(--text-2); font-size:10px; font-weight:600;">0 alerts</span>
+        </div>
+        <div class="alert-log" id="alert-log">
+          <div class="alert-empty">No alerts — system nominal</div>
+        </div>
+      </div>
+
+    </div><!-- /col-controls -->
+
+  </main>
+
+  <!-- ══════════════════════════════════════════════════════
+       FOOTER — 4 stats
+  ══════════════════════════════════════════════════════ -->
+  <footer>
+    <div class="fstat">
+      <span class="fl">Runtime</span>
+      <span class="fv" id="ft-runtime">---.-h</span>
+    </div>
+    <div class="fstat">
+      <span class="fl">Alerts Today</span>
+      <span class="fv" id="ft-alerts">0</span>
+    </div>
+    <div class="fstat">
+      <span class="fl">Last Service</span>
+      <span class="fv" id="ft-last-service">---h ago</span>
+    </div>
+    <div class="fstat">
+      <span class="fl">Next Service</span>
+      <span class="fv" id="ft-next-service" style="color:var(--green)">--.-h</span>
+    </div>
+  </footer>
+
+</div><!-- /app -->
+
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════════════════════ -->
+<script>
+"use strict";
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Constants & module-level state
+// ─────────────────────────────────────────────────────────────────────────────
+const WS_URL         = "ws://localhost:8765";
+const SPARKLINE_PTS  = 60;    // 60 points × 500ms = 30 s window
+const ZONE_COLOR     = { CLEAR:"#00e676", ADVISORY:"#448aff", WARNING:"#ffab00", CRITICAL:"#ff4444" };
+const CHIP_CLASS     = { OK:"ok", WARNING:"warn", CRITICAL:"crit", DUE_SOON:"warn", OVERDUE:"crit",
+                         HIGH:"warn", CLEAR:"ok", ADVISORY:"info", INFO:"info" };
+
+let ws              = null;
+let reconnTimer     = null;
+let faultActive     = false;
+let prevAlertLen    = -1;     // track alert array length for partial re-renders
+let sparkChart      = null;
+const tempHistory   = new Array(SPARKLINE_PTS).fill(75);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Thermal colour mapping
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Linearly interpolate between two hex colours.
+ * @param {string} c1 - hex colour like "#rrggbb"
+ * @param {string} c2 - hex colour
+ * @param {number} t  - 0..1
+ */
+function lerpColor(c1, c2, t) {
+  t = Math.max(0, Math.min(1, t));
+  const p = (h) => parseInt(h, 16);
+  const r1=p(c1.slice(1,3)), g1=p(c1.slice(3,5)), b1=p(c1.slice(5,7));
+  const r2=p(c2.slice(1,3)), g2=p(c2.slice(3,5)), b2=p(c2.slice(5,7));
+  const r=Math.round(r1+(r2-r1)*t), g=Math.round(g1+(g2-g1)*t), b=Math.round(b1+(b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+/**
+ * Map a temperature value (°C) to a CSS colour string.
+ *   < 25 °C  → cool blue  (#1a237e → #283593)
+ *   25–30 °C → teal       (#0e6655 → #00897b)
+ *   30–34 °C → amber      (#e65100 → #ffab00)
+ *   > 34 °C  → red        (#ff4444)
+ */
+function tempToColor(t) {
+  if (t >= 34)  return "#ff4444";
+  if (t >= 30)  return lerpColor("#e65100", "#ffab00",  (t - 30) / 4);
+  if (t >= 25)  return lerpColor("#004d40", "#00897b",  (t - 25) / 5);
+  return              lerpColor("#1a237e", "#283593",  Math.max(0, (t - 18) / 7));
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Chart.js sparkline initialisation
+// ─────────────────────────────────────────────────────────────────────────────
+function initSparkline() {
+  const ctx = document.getElementById("temp-chart").getContext("2d");
+
+  // Custom plugin: draws a red dashed line at 105 °C threshold
+  const thresholdPlugin = {
+    id: "thresholdLine",
+    afterDraw(chart) {
+      const { ctx: c, chartArea, scales } = chart;
+      if (!chartArea) return;
+      const y = scales.y.getPixelForValue(105);
+      c.save();
+      c.beginPath();
+      c.setLineDash([4, 4]);
+      c.strokeStyle = "#ff4444";
+      c.lineWidth   = 1;
+      c.globalAlpha = 0.7;
+      c.moveTo(chartArea.left, y);
+      c.lineTo(chartArea.right, y);
+      c.stroke();
+      c.restore();
+    }
+  };
+
+  sparkChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: new Array(SPARKLINE_PTS).fill(""),
+      datasets: [{
+        data:        [...tempHistory],
+        borderColor: "#00e676",
+        borderWidth: 2,
+        tension:     0.35,
+        pointRadius: 0,
+        fill:        false,
+      }]
+    },
+    options: {
+      animation:          false,
+      responsive:         true,
+      maintainAspectRatio:false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { display: false },
+        y: {
+          display: true,
+          min: 55, max: 120,
+          grid:  { color: "rgba(46,50,80,0.5)", drawBorder: false },
+          ticks: { color: "#8b92b8", font: { size: 9 }, maxTicksLimit: 4 }
+        }
+      }
+    },
+    plugins: [thresholdPlugin]
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Chip helper
+// ─────────────────────────────────────────────────────────────────────────────
+function setChip(id, label, level) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = label;
+  el.className   = "chip " + (CHIP_CLASS[level] || "ok");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  WebSocket — connect & reconnect
+// ─────────────────────────────────────────────────────────────────────────────
+function connect() {
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    clearTimeout(reconnTimer);
+    document.getElementById("ws-dot").classList.add("connected");
+    document.getElementById("ws-lbl").textContent = "Connected";
+    document.getElementById("overlay").classList.add("hidden");
+  };
+
+  ws.onclose = () => {
+    document.getElementById("ws-dot").classList.remove("connected");
+    document.getElementById("ws-lbl").textContent = "Reconnecting…";
+    document.getElementById("overlay").classList.remove("hidden");
+    reconnTimer = setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+
+  ws.onmessage = (evt) => {
+    try {
+      updateDashboard(JSON.parse(evt.data));
+    } catch (e) {
+      console.warn("RetroGuard: malformed JSON", e);
+    }
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Send control messages to server
+// ─────────────────────────────────────────────────────────────────────────────
+function sendCtrl(type, value) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type, value }));
+}
+
+
+function onPressureChange(val) {
+  const pct = Math.min(999, Math.round((val / 280) * 100));
+  document.getElementById("sv-pressure").textContent     = val;
+  document.getElementById("sv-pressure-pct").textContent = pct;
+  const slider = document.getElementById("ctrl-pressure");
+  slider.classList.toggle("overload", val > 280);
+  sendCtrl("set_pressure", val);
+}
+
+function toggleFault() {
+  faultActive = !faultActive;
+  const btn = document.getElementById("fault-btn");
+  btn.textContent = faultActive ? "✓ Clear Fault" : "⚡ Inject Vibration Fault";
+  btn.classList.toggle("active", faultActive);
+  sendCtrl("inject_fault", faultActive);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Main dashboard update (called on every WebSocket message)
+// ─────────────────────────────────────────────────────────────────────────────
+function updateDashboard(s) {
+  const { relay, interlock_reasons, safety, maintenance: maint, alerts, stats } = s;
+
+  // ── AI Failure Prediction ────────────────────────────────────────────────
+  if (s.prediction && s.prediction.available) {
+    const prob    = s.prediction.failure_probability;
+    const pct     = (prob * 100).toFixed(1);
+    const failed  = s.prediction.failure_predicted;
+    const color   = prob >= 0.7 ? "var(--red)" : prob >= 0.3 ? "var(--amber)" : "var(--green)";
+    const borderA = prob >= 0.7 ? "rgba(255,68,68,0.3)" : prob >= 0.3 ? "rgba(255,171,0,0.3)" : "rgba(0,230,118,0.3)";
+    const bgA     = prob >= 0.7 ? "rgba(255,68,68,0.08)" : prob >= 0.3 ? "rgba(255,171,0,0.08)" : "rgba(0,230,118,0.08)";
+
+    document.getElementById("pred-pct-label").textContent  = `${pct}%`;
+    document.getElementById("pred-pct-label").style.color  = color;
+    document.getElementById("pred-bar").style.width        = `${Math.min(100, pct)}%`;
+    document.getElementById("pred-bar").style.background   = color;
+
+    const badge = document.getElementById("pred-badge");
+    badge.textContent  = failed ? "⚠ FAILURE PREDICTED" : "✓ NO FAILURE PREDICTED";
+    badge.style.color  = color;
+    badge.style.border = `1px solid ${borderA}`;
+    badge.style.background = bgA;
+  }
+
+  // ── Relay Badge ──────────────────────────────────────────────────────────
+  const badge = document.getElementById("relay-badge");
+  badge.className = "relay-badge " + (relay ? "operable" : "interlocked");
+  document.getElementById("relay-text").textContent =
+    relay ? "● VEHICLE OPERABLE" : "⚠ INTERLOCKED";
+  document.getElementById("relay-reasons").textContent =
+    interlock_reasons.length ? interlock_reasons.join("  •  ") : "";
+
+  // ── Hydraulic pressure tile ───────────────────────────────────────────────
+  document.getElementById("tv-pressure").textContent = `${safety.pressure_bar} bar`;
+  setChip("chip-pressure", safety.pressure_status, safety.pressure_status);
+
+  // ── Door tile ─────────────────────────────────────────────────────────────
+  const doorOpen = !safety.door_closed;
+  const doorEl   = document.getElementById("tv-door");
+  doorEl.textContent  = doorOpen ? "OPEN" : "Closed";
+  doorEl.style.color  = doorOpen ? "var(--red)" : "var(--green)";
+  setChip("chip-door", doorOpen ? "OPEN" : "CLOSED", doorOpen ? "CRITICAL" : "OK");
+
+  // ── Seatbelt tile ─────────────────────────────────────────────────────────
+  const beltOff = !safety.belt_buckled;
+  const beltEl  = document.getElementById("tv-belt");
+  beltEl.textContent = beltOff ? "UNBUCKLED" : "Buckled";
+  beltEl.style.color = beltOff ? "var(--red)" : "var(--green)";
+  setChip("chip-belt", beltOff ? "UNBUCKLED" : "BUCKLED", beltOff ? "CRITICAL" : "OK");
+
+
+  // ── Big maintenance tiles (Machine 1) ────────────────────────────────────
+  document.getElementById("bt-rpm").textContent  = Math.round(maint.rpm);
+  const rpmLvl = maint.rpm > 2300 ? "CRITICAL" : maint.rpm > 1950 ? "HIGH" : "OK";
+  setChip("chip-rpm", rpmLvl === "HIGH" ? "HIGH" : rpmLvl, rpmLvl);
+
+  document.getElementById("bt-temp").textContent = `${maint.temp_c}°C`;
+  setChip("chip-temp", maint.temp_status, maint.temp_status);
+
+  document.getElementById("bt-vib").textContent  = `${maint.vibration_g}g`;
+  setChip("chip-vib", maint.vibration_status, maint.vibration_status);
+
+  document.getElementById("bt-hyd").textContent  = `${safety.pressure_bar} bar`;
+  setChip("chip-hyd", safety.pressure_status, safety.pressure_status);
+
+  const svcH   = maint.hours_to_service;
+  const svcSt  = maint.service_status;
+
+  // ── Temperature sparkline ─────────────────────────────────────────────────
+  tempHistory.shift();
+  tempHistory.push(maint.temp_c);
+  if (sparkChart) {
+    sparkChart.data.datasets[0].data = [...tempHistory];
+    sparkChart.update("none");
+  }
+
+  // ── Alert log (only re-render when count changes) ─────────────────────────
+  if (alerts.length !== prevAlertLen) {
+    prevAlertLen = alerts.length;
+    document.getElementById("alert-count").textContent = `${alerts.length} alert${alerts.length !== 1 ? "s" : ""}`;
+    const log = document.getElementById("alert-log");
+    if (alerts.length === 0) {
+      log.innerHTML = `<div class="alert-empty">No alerts — system nominal</div>`;
+    } else {
+      log.innerHTML = alerts.map(a => `
+        <div class="alert-entry ${a.level}">
+          <span class="alert-ts">${a.timestamp}</span>
+          <span class="alert-msg">${escHtml(a.message)}</span>
+          <span class="alert-detail">${escHtml(a.detail)}</span>
+        </div>`).join("");
+      log.scrollTop = 0;
+    }
+  }
+
+  // ── Footer stats ──────────────────────────────────────────────────────────
+  document.getElementById("ft-runtime").textContent      = `${maint.runtime_hrs}h`;
+  document.getElementById("ft-alerts").textContent       = stats.alerts_today;
+  document.getElementById("ft-last-service").textContent =
+    `${maint.hours_since_service.toFixed(1)}h ago`;
+
+  const nextEl = document.getElementById("ft-next-service");
+  nextEl.textContent  = svcSt === "OVERDUE" ? "Overdue" : `${svcH}h`;
+  nextEl.style.color  = svcSt === "OVERDUE" ? "var(--red)"
+                      : svcSt === "DUE_SOON"? "var(--amber)"
+                      :                       "var(--green)";
+
+  // ── Uptime ────────────────────────────────────────────────────────────────
+  document.getElementById("uptime-display").textContent = fmtUptime(stats.uptime_seconds);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+
+function fmtUptime(sec) {
+  if (sec < 60)   return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec/60)}m ${sec%60}s`;
+  return `${Math.floor(sec/3600)}h ${Math.floor((sec%3600)/60)}m`;
+}
+
+function tickClock() {
+  const n = new Date();
+  document.getElementById("live-clock").textContent =
+    [n.getHours(), n.getMinutes(), n.getSeconds()]
+      .map(x => String(x).padStart(2,"0")).join(":");
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Initialise on DOMContentLoaded
+// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  Bluetooth & Internet button toggles (UI-only, no real connection)
+// ─────────────────────────────────────────────────────────────────────────────
+let btConnected   = false;
+let inetConnected = false;
+
+function toggleBluetooth() {
+  btConnected = !btConnected;
+  const btn = document.getElementById("bt-btn");
+  btn.classList.toggle("connected", btConnected);
+  btn.innerHTML = btConnected
+    ? '<span>&#x1F4F6;</span> Bluetooth Connected'
+    : '<span>&#x1F4F6;</span> Connect Bluetooth';
+}
+
+function toggleInternet() {
+  inetConnected = !inetConnected;
+  const btn = document.getElementById("inet-btn");
+  btn.classList.toggle("connected", inetConnected);
+  btn.innerHTML = inetConnected
+    ? '<span>&#x1F310;</span> Internet Connected'
+    : '<span>&#x1F310;</span> Internet';
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initSparkline();
+  connect();
+  setInterval(tickClock, 1000);
+  tickClock();
+});
+</script>
+
+</body>
+</html>
