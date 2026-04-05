@@ -21,9 +21,6 @@ If the vehicle is equipped with an electrical system, consumption is monitored v
 Note: The voltage is to be set by the user following the vehicles specifications.
 
 ## Usage
-Today at 8:20 AM
-8:20 AM
-Asma
 SafeShift is designed for simple and intuitive usage, requiring the operator to download and launch the mobile application and connect to the system via WiFi or Bluetooth.
 
 run app
