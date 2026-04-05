@@ -15,3 +15,5 @@ SafeShift uses a combination of sensors to ensure real-time safety monitoring an
 SafeShift tracks the following parameters in Industrial Vehicles: Vibration in motor pumps, temperature of motor-pumps. it uses a simple DS18B20 to track temperature sensors and an ADXL345 for vibrations. There are 4 of each applicable to this system.
 
 ## Energy Tracking 
+If the vehicle is equipped with an electrical system, consumption is monitored via real-time current data shown on the dashboard through the current sensor.
+Note: The voltage is to be set by the user following the vehicles specifications.
