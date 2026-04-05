@@ -3,6 +3,8 @@ SafeShift is a system meant to be retrofitted on new and/or old industrial vehic
 
 ## Physical Installation
 The main SafeShift board is to be placed in space inside the drivers cabin. and the sensors respective connectors will be plugged into them. The sensors are to be bolted/fasted to their repective areas (defined below). _NOTE: not ALL sensors must be connected to use SafeShift_
+<img width="1721" height="965" alt="image" src="https://github.com/user-attachments/assets/0dbe2eb0-9e8e-4bf4-827d-cef882a1213e" />
+
 <img width="1730" height="1142" alt="image" src="https://github.com/user-attachments/assets/1c289df4-5d90-434b-9a91-b1259d5d4591" />
 
 ## Connectivity and Dashboard
